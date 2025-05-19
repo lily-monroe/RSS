@@ -1,0 +1,39 @@
+name: Generate and Update RSS Feed
+
+on:
+  workflow_dispatch: # Pozwala na ręczne uruchomienie workflow z interfejsu GitHub
+  schedule:
+    # Uruchamia workflow codziennie o 03:00 UTC (czyli 05:00 w Polsce czasu letniego)
+    # Możesz dostosować harmonogram, np. '0 */2 * * *' dla co 2 godziny
+    - cron: '0 3 * * *' 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Użyj najnowszej wersji Ubuntu
+
+    steps:
+    - name: Checkout repository # Klonuje Twoje repozytorium
+      uses: actions/checkout@v4
+
+    - name: Set up Python # Konfiguruje środowisko Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x' # Użyj najnowszej wersji Pythona 3
+
+    - name: Install dependencies # Instaluje biblioteki z requirements.txt
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Python script to generate RSS # Uruchamia Twój skrypt
+      run: python generate_rss.py # Upewnij się, że nazwa pliku jest poprawna
+
+    - name: Commit and push changes # Przesyła zmiany z powrotem do repozytorium
+      run: |
+        git config --global user.name 'github-actions[bot]' # Ustawia nazwę użytkownika bota
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com' # Ustawia e-mail bota
+        git add playlista_radio357.xml # Dodaje wygenerowany plik XML do śledzenia Git
+        git commit -m "Update RSS feed" || echo "No changes to commit" # Tworzy commit, jeśli są zmiany
+        git push # Wypycha zmiany do repozytorium
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # Używa utworzonego wcześniej sekretu
