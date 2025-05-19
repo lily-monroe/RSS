@@ -26,7 +26,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run Python script to generate RSS # Uruchamia Twój skrypt
-      run: python generate_rss.py # Upewnij się, że nazwa pliku jest poprawna
+      run: RADIO 357.py # Upewnij się, że nazwa pliku jest poprawna
 
     - name: Commit and push changes # Przesyła zmiany z powrotem do repozytorium
       run: |
