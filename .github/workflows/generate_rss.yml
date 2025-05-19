@@ -26,13 +26,13 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run Python script to generate RSS # Uruchamia Twój skrypt
-      run: RADIO 357.py # Upewnij się, że nazwa pliku jest poprawna
+      run: RADIO_357.py # Upewnij się, że nazwa pliku jest poprawna
 
     - name: Commit and push changes # Przesyła zmiany z powrotem do repozytorium
       run: |
         git config --global user.name 'github-actions[bot]' # Ustawia nazwę użytkownika bota
         git config --global user.email 'github-actions[bot]@users.noreply.github.com' # Ustawia e-mail bota
-        git add RADIO 357.xml # Dodaje wygenerowany plik XML do śledzenia Git
+        git add RADIO_357.xml # Dodaje wygenerowany plik XML do śledzenia Git
         git commit -m "Update RSS feed" || echo "No changes to commit" # Tworzy commit, jeśli są zmiany
         git push # Wypycha zmiany do repozytorium
       env:
