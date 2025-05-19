@@ -32,7 +32,7 @@ jobs:
       run: |
         git config --global user.name 'github-actions[bot]' # Ustawia nazwę użytkownika bota
         git config --global user.email 'github-actions[bot]@users.noreply.github.com' # Ustawia e-mail bota
-        git add playlista_radio357.xml # Dodaje wygenerowany plik XML do śledzenia Git
+        git add RADIO 357.xml # Dodaje wygenerowany plik XML do śledzenia Git
         git commit -m "Update RSS feed" || echo "No changes to commit" # Tworzy commit, jeśli są zmiany
         git push # Wypycha zmiany do repozytorium
       env:
