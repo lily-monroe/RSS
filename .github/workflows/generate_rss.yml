@@ -5,7 +5,7 @@ on:
   schedule:
     # Uruchamia workflow codziennie o 03:00 UTC (czyli 05:00 w Polsce czasu letniego)
     # Możesz dostosować harmonogram, np. '0 */2 * * *' dla co 2 godziny
-    - cron: '0 3 * * *' 
+    - cron: '* * * * *' 
 
 jobs:
   build:
