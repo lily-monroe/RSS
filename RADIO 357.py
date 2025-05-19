@@ -19,7 +19,7 @@ def pobierz_i_parsuj_playliste(url):
         print(f"Wystąpił błąd podczas pobierania strony: {e}")
         return []
 
-def wygeneruj_rss(utwory, nazwa_pliku="playlista_radio357.xml"):
+def wygeneruj_rss(utwory, nazwa_pliku="RADIO 357.xml"):
     """Generuje plik RSS 2.0 z danych utworów."""
     root = ET.Element('rss', version='2.0')
     channel = ET.SubElement(root, 'channel')
