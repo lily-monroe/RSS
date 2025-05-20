@@ -196,7 +196,7 @@ if __name__ == "__main__":
                 wszystkie_parsowane_utwory.extend(parsowane_utwory)
             elif "ukradiolive.com" in url_stacji:
                 parsowane_utwory = parsuj_ukradiolive(html_content, nazwa_stacji)
-                wszystkie_parsowane_utwory.extend(parsowane_utworow)
+                wszystkie_parsowane_utwory.extend(parsowane_utwory)
             else:
                 print(f"Brak zdefiniowanej funkcji parsowania dla {url_stacji}")
         else:
