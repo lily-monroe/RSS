@@ -4,6 +4,7 @@ from datetime import datetime
 import re
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
+# import json # Niepotrzebne już, jeśli nie używamy iTunes API
 
 def pobierz_strone(url):
     """Pobiera zawartość strony HTML."""
@@ -18,34 +19,13 @@ def pobierz_strone(url):
         print(f"Wystąpił błąd podczas pobierania strony {url}: {e}")
         return None
 
-def pobierz_obrazek_z_covers_musichoarders(artist, title):
-    """Próbuje znaleźć bezpośredni link do obrazka z covers.musichoarders.xyz."""
-    if not artist and not title: # Jeśli brak artysty i tytułu, nie ma sensu szukać
-        return ""
+# Funkcja pobierz_obrazek_z_covers_musichoarders nie jest już potrzebna, jeśli używamy tylko YouTube
+# def pobierz_obrazek_z_covers_musichoarders(artist, title):
+#    ...
 
-    encoded_artist = quote_plus(artist)
-    encoded_album = quote_plus(title)
-    search_url = f"https://covers.musichoarders.xyz/?artist={encoded_artist}&album={encoded_album}&country=us&sources=amazonmusic"
-
-    print(f"Szukam obrazka dla: {artist} - {title} na {search_url}")
-    html_content = pobierz_strone(search_url)
-
-    if html_content:
-        soup = BeautifulSoup(html_content, 'html.parser')
-        # Szukamy pierwszego obrazka na stronie, który ma atrybut src
-        # Możliwe, że trzeba będzie dopasować selektor, jeśli struktura strony się zmieni
-        img_tag = soup.find('img', class_='cover') # Często mają klasę 'cover' lub podobną
-        if img_tag and img_tag.get('src'):
-            img_src = img_tag.get('src')
-            # Czasami linki są względne, więc upewnij się, że są absolutne
-            if img_src.startswith('//'):
-                return 'https:' + img_src
-            elif img_src.startswith('/'):
-                return 'https://covers.musichoarders.xyz' + img_src
-            elif img_src.startswith('http'):
-                return img_src
-    print(f"Nie znaleziono bezpośredniego linku do obrazka dla {artist} - {title}")
-    return ""
+# Funkcja pobierz_obrazek_z_itunes nie jest już potrzebna
+# def pobierz_obrazek_z_itunes(artist, title):
+#    ...
 
 
 def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
@@ -58,6 +38,7 @@ def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
         youtube_id = utwor_html.find('div', class_=re.compile(r'txt1 anim'))
         youtube_id = youtube_id.get('data-youtube', '') if youtube_id else ''
         
+        # POPRAWKA: Pobieramy czas z atrybutu data-original-title
         czas_emisji_span = utwor_html.find('span', class_='txt2 mcolumn')
         czas_emisji_pelny = czas_emisji_span.get('data-original-title', '').strip() if czas_emisji_span else ''
 
@@ -67,20 +48,9 @@ def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
         tytul_span = utwor_html.find('span', itemprop='name')
         tytul = tytul_span.text.strip() if tytul_span else ''
 
-        image_url_from_site = ''
-        # Szukamy obrazka w tym samym kontenerze, który jest obok 'yt-row'
-        # To jest trudniejsze, bo HTML nie był podany dla całej struktury.
-        # Opieramy się na poprzedniej logice, zakładając, że obrazek jest w div.songCont
-        # i ma klasę 'js-img-lload'
-        # Jeśli obrazek jest bezpośrednio w songCont, to go znajdziemy.
-        # Przykład, który podałeś nie zawierał image_span. Szukamy w rodzicu albo poprzedniku.
-        parent_song_cont = utwor_html.find_parent('div', class_='songCont')
-        if parent_song_cont:
-            img_tag = parent_song_cont.find('img', class_='js-img-lload')
-            image_url_from_site = img_tag.get('data-lazy-load', '') if img_tag else ''
-
-        image_url_big = image_url_from_site.replace('50x50bb.webp', '1000x1000bb.webp') if image_url_from_site else ''
-
+        # Link do obrazka będzie generowany z youtube_id, więc nie pobieramy go stąd
+        # image_url_big = '' 
+        
         if not (wykonawca and tytul and czas_emisji_pelny):
             continue
 
@@ -90,8 +60,7 @@ def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
             'wykonawca': wykonawca,
             'tytul': tytul,
             'czas_emisji_pelny': czas_emisji_pelny, 
-            'image_url_big': image_url_big, # Pierwotny obrazek ze strony myradioonline.pl
-            'youtube_id': youtube_id
+            'youtube_id': youtube_id # Nadal potrzebujemy ID YouTube
         })
     return lista_parsowanych_utworow
 
@@ -136,9 +105,8 @@ def parsuj_ukradiolive(html_content, stacja_nazwa, stacja_url):
             'stacja_url': stacja_url,
             'wykonawca': wykonawca,
             'tytul': tytul,
-            'czas_emisji_pelny': czas_emisji_pelny, 
-            'image_url_big': '', # Tutaj będzie próba pobrania z covers.musichoarders.xyz
-            'youtube_id': '' 
+            'czas_emisji_pelny': czas_emisja_pelny, 
+            'youtube_id': '' # Te strony nie dostarczają ID YouTube
         })
     return lista_parsowanych_utworow
 
@@ -147,7 +115,7 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
     """Generuje plik RSS 2.0 z danych utworów ze wszystkich stacji."""
     root = ET.Element('rss', version='2.0')
     channel = ET.SubElement(root, 'channel')
-    ET.SubElement(channel, 'title').text = 'ALL RADIO'
+    ET.SubElement(channel, 'title').text = 'ALL RADIO' 
     ET.SubElement(channel, 'link').text = 'https://github.com/lily-monroe/RSS' 
     ET.SubElement(channel, 'description').text = 'Playlista z wielu stacji radiowych'
 
@@ -169,17 +137,13 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         # Element <description>
         item_description_parts = []
         
-        # Logika pobierania obrazka:
-        # 1. Sprawdź, czy już mamy image_url_big z parsowania myradioonline.pl
-        # 2. Jeśli nie, spróbuj pobrać z covers.musichoarders.xyz
-        final_image_url = utwor['image_url_big']
-        if not final_image_url and utwor['wykonawca'] and utwor['tytul']:
-            final_image_url = pobierz_obrazek_z_covers_musichoarders(utwor['wykonawca'], utwor['tytul'])
+        # GENEROWANIE OBRAZKA Z YOUTUBE ID
+        youtube_image_url = ""
+        if utwor['youtube_id']:
+            youtube_image_url = f"https://img.youtube.com/vi/{utwor['youtube_id']}/maxresdefault.jpg"
+            item_description_parts.append(f'<img src="{youtube_image_url}"><br><br>')
         
-        if final_image_url:
-            item_description_parts.append(f'<img src="{final_image_url}"><br><br>')
-        
-        item_description_parts.append(f'<b>{utwor["wykonawca"]} - {utwor['tytul']}</b><br>')
+        item_description_parts.append(f'<b>{utwor["wykonawca"]} - {utwor["tytul"]}</b><br>')
         item_description_parts.append(f'{utwor["czas_emisji_pelny"]} | ')
         
         encoded_artist = quote_plus(utwor['wykonawca'])
@@ -187,7 +151,7 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         cover_link = f"https://covers.musichoarders.xyz/?artist={encoded_artist}&album={encoded_album}&country=us&sources=amazonmusic"
         item_description_parts.append(f'<a href="{cover_link}">COVER</a>')
 
-        if utwor['youtube_id']:
+        if utwor['youtube_id']: # Upewnij się, że link YouTube jest generowany tylko jeśli mamy ID
             youtube_full_link = f'http://youtube.com/watch?v={utwor["youtube_id"]}'
             item_description_parts.append(f' | <a href="{youtube_full_link}">YOUTUBE</a>')
         
@@ -196,11 +160,9 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
 
         ET.SubElement(item, 'link').text = utwor['stacja_url']
         
-        # Staramy się użyć dokładnego czasu emisji jako pubDate
         try:
             dt_pub = datetime.strptime(utwor['czas_emisji_pelny'], '%d.%m.%Y %H:%M')
-            # Domyślnie użyj strefy czasowej UTC, chyba że wiesz, jaka jest oryginalna
-            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') # RFC 822 format (UTC)
+            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') 
         except ValueError:
             ET.SubElement(item, 'pubDate').text = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
 
@@ -245,7 +207,6 @@ if __name__ == "__main__":
             print(f"Nie udało się pobrać treści dla {url_stacji}")
 
     if wszystkie_parsowane_utwory:
-        # Sortowanie odbywa się w funkcji wygeneruj_rss
         wygeneruj_rss(wszystkie_parsowane_utwory, nazwa_pliku="radio_playlist.xml") 
     else:
         print("Nie pobrano żadnych utworów z żadnej stacji.")
