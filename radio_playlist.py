@@ -18,58 +18,35 @@ def pobierz_strone(url):
         print(f"Wystąpił błąd podczas pobierania strony {url}: {e}")
         return None
 
-# Funkcja parsująca, która obsłuży zarówno myradioonline.pl jak i ukradiolive.com
 def parsuj_playliste(html_content, stacja_nazwa, stacja_url):
     """Parsuje listę utworów ze stron myradioonline.pl/playlista i ukradiolive.com/playlist."""
     soup = BeautifulSoup(html_content, 'html.parser')
-    # Szukamy divów o klasie 'yt-row' z itemprop="track"
     utwory_html = soup.find_all('div', itemprop='track', class_='yt-row')
     lista_parsowanych_utworow = []
 
     for utwor_html in utwory_html:
-        # {%1} - data-youtube
         youtube_div = utwor_html.find('div', class_=re.compile(r'txt1 anim'))
         youtube_id = youtube_div.get('data-youtube', '') if youtube_div else ''
         
-        # {%2} - data i czas odtworzenia (z span class="txt2 mcolumn" data-original-title)
-        # UWAGA: dla ukradiolive.com atrybut aria-label i data-original-title ma "Time of playback",
-        # ale w zawartości spana nie ma daty, tylko placeholder. 
-        # Konieczne jest użycie data-original-title.
+        # POPRAWKA: Pobieramy czas z tekstowej zawartości span
         czas_emisji_span = utwor_html.find('span', class_='txt2 mcolumn')
-        czas_emisji_pelny = czas_emisji_span.get('data-original-title', '').strip() if czas_emisji_span else ''
+        czas_emisji_pelny = czas_emisji_span.text.strip() if czas_emisji_span else ''
 
-        # Jeśli data-original-title to "Termin odtwarzania" (PL) lub "Time of playback" (EN)
-        # to oznacza, że właściwa data i czas jest w innej strukturze.
-        # Sprawdźmy, czy jest to właściwa data/czas, jeśli nie, to jest to stary HTML lub pusta wartość.
-        # W takim przypadku, musimy zakładać, że format jest DD.MM.RRRR GG:MM
-        # Jeśli nie jest to data, to może to być problem z HTML, ale z Twojego przykładu wynika, że jest.
+        # Dodajemy bieżący rok, jeśli format to "DD.MM HH:MM"
+        if re.match(r'^\d{2}\.\d{2}\s\d{2}:\d{2}$', czas_emisji_pelny):
+            current_year = datetime.now().year
+            # Tworzymy pełny format z rokiem, a następnie parsujemy i formatujemy ponownie
+            # aby uzyskać zawsze format "DD.MM.RRRR HH:MM"
+            try:
+                temp_dt = datetime.strptime(f"{czas_emisji_pelny} {current_year}", '%d.%m %H:%M %Y')
+                czas_emisji_pelny = temp_dt.strftime('%d.%m.%Y %H:%M')
+            except ValueError:
+                # Jeśli parsowanie się nie powiedzie (np. niepoprawna data), zostawiamy jak jest
+                pass 
         
-        # DODATKOWA WALIDACJA DLA CZASU EMISJI:
-        # Jeśli strona zwraca "Time of playback" zamiast faktycznej daty, to poprzednie parsowanie było błędne.
-        # Sprawdzimy, czy to rzeczywiście data. Jeśli nie, to możemy spróbować alternatywnego parsowania
-        # lub po prostu użyć aktualnej daty, jeśli nie ma lepszej opcji.
-        # Z Twojego przykładu HTML wynika, że data-original-title to już jest faktyczny czas, np. "19.05.2025 21:33"
-        # Sprawdzamy, czy czas_emisji_pelny zawiera liczby i ":"
-        if not re.search(r'\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}', czas_emisji_pelny):
-             # Możliwe, że jest to "Time of playback" lub inny niepasujący tekst.
-             # Dla ukradiolive.com, jeśli data-original-title to "Time of playback", a nie ma faktycznej daty,
-             # to niestety nie uzyskamy jej z tego elementu. 
-             # Sprawdzamy, czy w inner_text spana nie ma daty, jak w poprzednich wersjach ukradiolive.com
-             # (jeśli to poprzednia struktura, bez data-original-title z datą)
-             
-             # W TYM PRZYPADKU, GDY HTML JEST TAKI SAM, data-original-title POWINIEN JUŻ ZAWIERAĆ DATĘ.
-             # Jeśli jednak mimo wszystko jest tekst "Time of playback", to znaczy, że nasza analiza HTML jest błędna
-             # lub strona dynamicznie zmienia zawartość atrybutu.
-             # Na podstawie Twojego ostatniego przykładu, 'data-original-title' powinien już zawierać właściwą datę.
-             # Zostawiamy jak jest, ale warto mieć na uwadze, jeśli problem się powtórzy.
-            pass
-
-
-        # {%3} - nazwa artysty (span itemprop="byArtist")
         wykonawca_span = utwor_html.find('span', itemprop='byArtist')
         wykonawca = wykonawca_span.text.strip() if wykonawca_span else ''
 
-        # {%4} - tytuł utworu (span itemprop="name")
         tytul_span = utwor_html.find('span', itemprop='name')
         tytul = tytul_span.text.strip() if tytul_span else ''
 
@@ -99,8 +76,6 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         try:
             return datetime.strptime(item['czas_emisji_pelny'], '%d.%m.%Y %H:%M')
         except ValueError:
-            # Jeśli data/czas jest w nieprawidłowym formacie, dajemy minimalną datę
-            # aby ten element znalazł się na końcu po posortowaniu malejąco
             return datetime.min 
 
     posortowane_utwory = sorted(wszystkie_utwory, key=get_sort_key, reverse=True)
@@ -108,14 +83,11 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
     for utwor in posortowane_utwory:
         item = ET.SubElement(channel, 'item')
         
-        # Element <title>
         item_title = f"[{utwor['stacja']}] {utwor['wykonawca']} - {utwor['tytul']} | {utwor['czas_emisji_pelny']}"
         ET.SubElement(item, 'title').text = item_title
         
-        # Element <description>
         item_description_parts = []
         
-        # GENEROWANIE OBRAZKA Z YOUTUBE ID
         youtube_image_url = ""
         if utwor['youtube_id']:
             youtube_image_url = f"https://img.youtube.com/vi/{utwor['youtube_id']}/maxresdefault.jpg"
@@ -139,12 +111,9 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         ET.SubElement(item, 'link').text = utwor['stacja_url']
         
         try:
-            # Używamy pobranego 'czas_emisji_pelny' do pubDate
             dt_pub = datetime.strptime(utwor['czas_emisji_pelny'], '%d.%m.%Y %H:%M')
-            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') # RFC 822 format (UTC)
+            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') 
         except ValueError:
-            # Jeśli parsowanie się nie powiedzie (np. dla ukradiolive.com, gdzie data może być inna),
-            # użyj bieżącej daty generowania, aby uniknąć błędu.
             print(f"Ostrzeżenie: Nie udało się sparsować daty '{utwor['czas_emisji_pelny']}'. Używam bieżącej daty dla pubDate.")
             ET.SubElement(item, 'pubDate').text = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
 
@@ -177,7 +146,6 @@ if __name__ == "__main__":
         print(f"Pobieram i parsuję playlistę dla: {nazwa_stacji} z {url_stacji}")
         html_content = pobierz_strone(url_stacji)
         if html_content:
-            # Ponieważ struktura HTML jest taka sama, używamy jednej funkcji parsującej
             parsowane_utwory = parsuj_playliste(html_content, nazwa_stacji, url_stacji)
             wszystkie_parsowane_utwory.extend(parsowane_utwory)
         else:
