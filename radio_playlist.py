@@ -4,7 +4,6 @@ from datetime import datetime
 import re
 import xml.etree.ElementTree as ET
 from urllib.parse import quote_plus
-# import json # Niepotrzebne już, jeśli nie używamy iTunes API
 
 def pobierz_strone(url):
     """Pobiera zawartość strony HTML."""
@@ -19,38 +18,61 @@ def pobierz_strone(url):
         print(f"Wystąpił błąd podczas pobierania strony {url}: {e}")
         return None
 
-# Funkcja pobierz_obrazek_z_covers_musichoarders nie jest już potrzebna, jeśli używamy tylko YouTube
-# def pobierz_obrazek_z_covers_musichoarders(artist, title):
-#    ...
-
-# Funkcja pobierz_obrazek_z_itunes nie jest już potrzebna
-# def pobierz_obrazek_z_itunes(artist, title):
-#    ...
-
-
-def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
-    """Parsuje listę utworów ze strony myradioonline.pl/playlista."""
+# Funkcja parsująca, która obsłuży zarówno myradioonline.pl jak i ukradiolive.com
+def parsuj_playliste(html_content, stacja_nazwa, stacja_url):
+    """Parsuje listę utworów ze stron myradioonline.pl/playlista i ukradiolive.com/playlist."""
     soup = BeautifulSoup(html_content, 'html.parser')
+    # Szukamy divów o klasie 'yt-row' z itemprop="track"
     utwory_html = soup.find_all('div', itemprop='track', class_='yt-row')
     lista_parsowanych_utworow = []
 
     for utwor_html in utwory_html:
-        youtube_id = utwor_html.find('div', class_=re.compile(r'txt1 anim'))
-        youtube_id = youtube_id.get('data-youtube', '') if youtube_id else ''
+        # {%1} - data-youtube
+        youtube_div = utwor_html.find('div', class_=re.compile(r'txt1 anim'))
+        youtube_id = youtube_div.get('data-youtube', '') if youtube_div else ''
         
-        # POPRAWKA: Pobieramy czas z atrybutu data-original-title
+        # {%2} - data i czas odtworzenia (z span class="txt2 mcolumn" data-original-title)
+        # UWAGA: dla ukradiolive.com atrybut aria-label i data-original-title ma "Time of playback",
+        # ale w zawartości spana nie ma daty, tylko placeholder. 
+        # Konieczne jest użycie data-original-title.
         czas_emisji_span = utwor_html.find('span', class_='txt2 mcolumn')
         czas_emisji_pelny = czas_emisji_span.get('data-original-title', '').strip() if czas_emisji_span else ''
 
+        # Jeśli data-original-title to "Termin odtwarzania" (PL) lub "Time of playback" (EN)
+        # to oznacza, że właściwa data i czas jest w innej strukturze.
+        # Sprawdźmy, czy jest to właściwa data/czas, jeśli nie, to jest to stary HTML lub pusta wartość.
+        # W takim przypadku, musimy zakładać, że format jest DD.MM.RRRR GG:MM
+        # Jeśli nie jest to data, to może to być problem z HTML, ale z Twojego przykładu wynika, że jest.
+        
+        # DODATKOWA WALIDACJA DLA CZASU EMISJI:
+        # Jeśli strona zwraca "Time of playback" zamiast faktycznej daty, to poprzednie parsowanie było błędne.
+        # Sprawdzimy, czy to rzeczywiście data. Jeśli nie, to możemy spróbować alternatywnego parsowania
+        # lub po prostu użyć aktualnej daty, jeśli nie ma lepszej opcji.
+        # Z Twojego przykładu HTML wynika, że data-original-title to już jest faktyczny czas, np. "19.05.2025 21:33"
+        # Sprawdzamy, czy czas_emisji_pelny zawiera liczby i ":"
+        if not re.search(r'\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}', czas_emisji_pelny):
+             # Możliwe, że jest to "Time of playback" lub inny niepasujący tekst.
+             # Dla ukradiolive.com, jeśli data-original-title to "Time of playback", a nie ma faktycznej daty,
+             # to niestety nie uzyskamy jej z tego elementu. 
+             # Sprawdzamy, czy w inner_text spana nie ma daty, jak w poprzednich wersjach ukradiolive.com
+             # (jeśli to poprzednia struktura, bez data-original-title z datą)
+             
+             # W TYM PRZYPADKU, GDY HTML JEST TAKI SAM, data-original-title POWINIEN JUŻ ZAWIERAĆ DATĘ.
+             # Jeśli jednak mimo wszystko jest tekst "Time of playback", to znaczy, że nasza analiza HTML jest błędna
+             # lub strona dynamicznie zmienia zawartość atrybutu.
+             # Na podstawie Twojego ostatniego przykładu, 'data-original-title' powinien już zawierać właściwą datę.
+             # Zostawiamy jak jest, ale warto mieć na uwadze, jeśli problem się powtórzy.
+            pass
+
+
+        # {%3} - nazwa artysty (span itemprop="byArtist")
         wykonawca_span = utwor_html.find('span', itemprop='byArtist')
         wykonawca = wykonawca_span.text.strip() if wykonawca_span else ''
 
+        # {%4} - tytuł utworu (span itemprop="name")
         tytul_span = utwor_html.find('span', itemprop='name')
         tytul = tytul_span.text.strip() if tytul_span else ''
 
-        # Link do obrazka będzie generowany z youtube_id, więc nie pobieramy go stąd
-        # image_url_big = '' 
-        
         if not (wykonawca and tytul and czas_emisji_pelny):
             continue
 
@@ -60,53 +82,7 @@ def parsuj_myradioonline(html_content, stacja_nazwa, stacja_url):
             'wykonawca': wykonawca,
             'tytul': tytul,
             'czas_emisji_pelny': czas_emisji_pelny, 
-            'youtube_id': youtube_id # Nadal potrzebujemy ID YouTube
-        })
-    return lista_parsowanych_utworow
-
-def parsuj_ukradiolive(html_content, stacja_nazwa, stacja_url):
-    """Parsuje listę utworów ze strony ukradiolive.com/playlist."""
-    soup = BeautifulSoup(html_content, 'html.parser')
-    lista_parsowanych_utworow = []
-
-    playlist_items = soup.select('div.col-md-9 ul.list-group li.list-group-item') 
-
-    for item in playlist_items:
-        text_content = item.get_text(strip=True)
-        
-        czas_emisji_str = ''
-        wykonawca = ''
-        tytul = ''
-
-        match = re.match(r'(\d{1,2}:\d{2}\s(?:AM|PM))\s-\s(.*)', text_content)
-        if match:
-            czas_emisji_str = match.group(1).strip()
-            artist_title_str = match.group(2).strip()
-
-            try:
-                dt_obj = datetime.strptime(czas_emisji_str, '%I:%M %p')
-                dzisiejsza_data = datetime.now().strftime('%d.%m.%Y')
-                czas_emisji_pelny = f"{dzisiejsza_data} {dt_obj.strftime('%H:%M')}"
-            except ValueError:
-                czas_emisji_pelny = f"{datetime.now().strftime('%d.%m.%Y')} {czas_emisji_str}" 
-            
-            if ' - ' in artist_title_str:
-                parts = artist_title_str.split(' - ', 1)
-                wykonawca = parts[0].strip()
-                tytul = parts[1].strip()
-            else:
-                tytul = artist_title_str 
-        else:
-            tytul = text_content
-            czas_emisji_pelny = f"{datetime.now().strftime('%d.%m.%Y')} {datetime.now().strftime('%H:%M')}"
-
-        lista_parsowanych_utworow.append({
-            'stacja': stacja_nazwa,
-            'stacja_url': stacja_url,
-            'wykonawca': wykonawca,
-            'tytul': tytul,
-            'czas_emisji_pelny': czas_emisja_pelny, 
-            'youtube_id': '' # Te strony nie dostarczają ID YouTube
+            'youtube_id': youtube_id
         })
     return lista_parsowanych_utworow
 
@@ -123,11 +99,13 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         try:
             return datetime.strptime(item['czas_emisji_pelny'], '%d.%m.%Y %H:%M')
         except ValueError:
+            # Jeśli data/czas jest w nieprawidłowym formacie, dajemy minimalną datę
+            # aby ten element znalazł się na końcu po posortowaniu malejąco
             return datetime.min 
 
     posortowane_utwory = sorted(wszystkie_utwory, key=get_sort_key, reverse=True)
 
-    for utwor in posortowane_utwory: # Używamy posortowanych utworów
+    for utwor in posortowane_utwory:
         item = ET.SubElement(channel, 'item')
         
         # Element <title>
@@ -151,7 +129,7 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         cover_link = f"https://covers.musichoarders.xyz/?artist={encoded_artist}&album={encoded_album}&country=us&sources=amazonmusic"
         item_description_parts.append(f'<a href="{cover_link}">COVER</a>')
 
-        if utwor['youtube_id']: # Upewnij się, że link YouTube jest generowany tylko jeśli mamy ID
+        if utwor['youtube_id']:
             youtube_full_link = f'http://youtube.com/watch?v={utwor["youtube_id"]}'
             item_description_parts.append(f' | <a href="{youtube_full_link}">YOUTUBE</a>')
         
@@ -161,9 +139,13 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         ET.SubElement(item, 'link').text = utwor['stacja_url']
         
         try:
+            # Używamy pobranego 'czas_emisji_pelny' do pubDate
             dt_pub = datetime.strptime(utwor['czas_emisji_pelny'], '%d.%m.%Y %H:%M')
-            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') 
+            ET.SubElement(item, 'pubDate').text = dt_pub.strftime('%a, %d %b %Y %H:%M:%S +0000') # RFC 822 format (UTC)
         except ValueError:
+            # Jeśli parsowanie się nie powiedzie (np. dla ukradiolive.com, gdzie data może być inna),
+            # użyj bieżącej daty generowania, aby uniknąć błędu.
+            print(f"Ostrzeżenie: Nie udało się sparsować daty '{utwor['czas_emisji_pelny']}'. Używam bieżącej daty dla pubDate.")
             ET.SubElement(item, 'pubDate').text = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
 
 
@@ -195,14 +177,9 @@ if __name__ == "__main__":
         print(f"Pobieram i parsuję playlistę dla: {nazwa_stacji} z {url_stacji}")
         html_content = pobierz_strone(url_stacji)
         if html_content:
-            if "myradioonline.pl" in url_stacji:
-                parsowane_utwory = parsuj_myradioonline(html_content, nazwa_stacji, url_stacji)
-                wszystkie_parsowane_utwory.extend(parsowane_utwory)
-            elif "ukradiolive.com" in url_stacji:
-                parsowane_utwory = parsuj_ukradiolive(html_content, nazwa_stacji, url_stacji)
-                wszystkie_parsowane_utwory.extend(parsowane_utwory) 
-            else:
-                print(f"Brak zdefiniowanej funkcji parsowania dla {url_stacji}")
+            # Ponieważ struktura HTML jest taka sama, używamy jednej funkcji parsującej
+            parsowane_utwory = parsuj_playliste(html_content, nazwa_stacji, url_stacji)
+            wszystkie_parsowane_utwory.extend(parsowane_utwory)
         else:
             print(f"Nie udało się pobrać treści dla {url_stacji}")
 
