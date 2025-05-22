@@ -73,10 +73,12 @@ def parsuj_playliste(html_content, stacja_nazwa, stacja_base_url):
             if not link_do_playlisty.endswith('/playlist'):
                 link_do_playlisty += '/playlist'
         elif stacja_base_url.startswith('https://myradioonline.pl/'):
+            # Dla myradioonline.pl zawsze chcemy /playlista na końcu linku RSS
             if not link_do_playlisty.endswith('/playlista'):
+                # Jeśli kończy się na /playlist, zmieniamy na /playlista
                 if link_do_playlisty.endswith('/playlist'):
                     link_do_playlisty = link_do_playlisty.replace('/playlist', '/playlista')
-                else:
+                else: # Jeśli nie kończy się ani na /playlist ani /playlista
                     link_do_playlisty += '/playlista'
 
 
@@ -173,11 +175,11 @@ if __name__ == "__main__":
         'Radio 357': {'url': 'https://myradioonline.pl/radio-357', 'plik_nazwa': 'radio-357'},
         'ChilliZET': {'url': 'https://myradioonline.pl/chillizet', 'plik_nazwa': 'chillizet'},
         'Radio Nowy Świat': {'url': 'https://myradioonline.pl/radio-nowy-swiat', 'plik_nazwa': 'radio-nowy-swiat'},
-        'RMF FM': {'url': 'https://myradioonline.pl/rmf-fm/playlista', 'plik_nazwa': 'rmf-fm'}, # Ten URL już ma /playlista
+        'RMF FM': {'url': 'https://myradioonline.pl/rmf-fm/', 'plik_nazwa': 'rmf-fm'}, # POPRAWIONY URL DLA RMF FM
         'RMF MAXXX': {'url': 'https://myradioonline.pl/rmf-maxxx', 'plik_nazwa': 'rmf-maxxx'},
         'Radio ZET': {'url': 'https://myradioonline.pl/radio-zet', 'plik_nazwa': 'radio-zet'},
         'PR Czwórka': {'url': 'https://myradioonline.pl/polskie-radio-czworka', 'plik_nazwa': 'polskie-radio-czworka'},
-        'PR Trójka': {'url': 'https://myradioonline.pl/polskie-radio-trojka', 'plik_nazwa': 'trojka'}, # Zmieniono nazwę pliku
+        'PR Trójka': {'url': 'https://myradioonline.pl/polskie-radio-trojka', 'plik_nazwa': 'trojka'},
         'Radio Eska': {'url': 'https://myradioonline.pl/radio-eska', 'plik_nazwa': 'radio-eska'}
     }
 
@@ -191,7 +193,11 @@ if __name__ == "__main__":
             parsowane_utwory = parsuj_playliste(html_content, nazwa_stacji, url_stacji)
             if parsowane_utwory:
                 # Generujemy RSS dla pojedynczej stacji
-                wygeneruj_rss_dla_stacji(parsowane_utwory, plik_nazwa_bazowa, parsowane_utwory[0]['stacja_playlist_url'])
+                # Upewniamy się, że stacja_playlist_url jest dostępny i przekazujemy go.
+                # Jeśli lista jest pusta, używamy stacja_base_url jako fallback dla linku channel.
+                # Jest bezpieczniej użyć parsowane_utwory[0]['stacja_playlist_url'] jeśli lista nie jest pusta
+                stacja_playlist_url_for_channel = parsowane_utwory[0]['stacja_playlist_url'] if parsowane_utwory else url_stacji
+                wygeneruj_rss_dla_stacji(parsowane_utwory, plik_nazwa_bazowa, stacja_playlist_url_for_channel)
             else:
                 print(f"Nie znaleziono utworów dla stacji {nazwa_stacji}. Nie wygenerowano pliku RSS.")
         else:
