@@ -60,7 +60,6 @@ def parsuj_playliste(html_content, stacja_nazwa, stacja_base_url):
         txt1_div = utwor_html.find('div', class_='txt1 anim')
         if txt1_div:
             text_content = txt1_div.get_text(separator=' ', strip=True) 
-            # Usuwamy początkowy czas (np. "00:03" lub "23:01") z tekstu
             match = re.match(r'^\d{2}:\d{2}\s+(.*)', text_content)
             if match:
                 artist_title_raw = match.group(1).strip()
@@ -70,17 +69,14 @@ def parsuj_playliste(html_content, stacja_nazwa, stacja_base_url):
                     tytul = parts[1].strip()
             
         link_do_playlisty = stacja_base_url
-        # Zapewniamy, że link do playlisty kończy się na /playlist lub /playlista
         if stacja_base_url.startswith('https://ukradiolive.com/'):
             if not link_do_playlisty.endswith('/playlist'):
                 link_do_playlisty += '/playlist'
         elif stacja_base_url.startswith('https://myradioonline.pl/'):
-            # Dla myradioonline.pl zawsze chcemy /playlista
             if not link_do_playlisty.endswith('/playlista'):
-                # Sprawdzamy czy link nie kończy się na /playlist i wtedy zmieniamy
                 if link_do_playlisty.endswith('/playlist'):
                     link_do_playlisty = link_do_playlisty.replace('/playlist', '/playlista')
-                else: # Jeśli nie kończy się ani na /playlist ani /playlista
+                else:
                     link_do_playlisty += '/playlista'
 
 
@@ -101,13 +97,13 @@ def parsuj_playliste(html_content, stacja_nazwa, stacja_base_url):
     return lista_parsowanych_utworow
 
 
-def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
-    """Generuje plik RSS 2.0 z danych utworów ze wszystkich stacji."""
+def wygeneruj_rss_dla_stacji(utwory_stacji, stacja_nazwa_do_pliku, stacja_url_do_rss):
+    """Generuje plik RSS 2.0 dla pojedynczej stacji."""
     root = ET.Element('rss', version='2.0')
     channel = ET.SubElement(root, 'channel')
-    ET.SubElement(channel, 'title').text = 'ALL RADIO' 
-    ET.SubElement(channel, 'link').text = 'https://github.com/lily-monroe/RSS' 
-    ET.SubElement(channel, 'description').text = 'Playlista z wielu stacji radiowych'
+    ET.SubElement(channel, 'title').text = stacja_nazwa_do_pliku.replace('-', ' ').replace('_', ' ').title() # Tytuł kanału to nazwa stacji
+    ET.SubElement(channel, 'link').text = stacja_url_do_rss # Link do kanału to URL playlisty stacji
+    ET.SubElement(channel, 'description').text = f'Aktualna playlista {stacja_nazwa_do_pliku.replace("-", " ").replace("_", " ").title()}' # Opis kanału
 
     def get_sort_key(item):
         try:
@@ -115,26 +111,24 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         except ValueError:
             return datetime.min 
 
-    posortowane_utwory = sorted(wszystkie_utwory, key=get_sort_key, reverse=True)
+    posortowane_utwory = sorted(utwory_stacji, key=get_sort_key, reverse=True)
 
     for utwor in posortowane_utwory:
         item = ET.SubElement(channel, 'item')
         
-        item_title = f"[{utwor['stacja']}] {utwor['artysta_tytul_alt']} | {utwor['czas_emisji_pelny']}"
+        # Usunięto nazwę radia z tytułu item
+        item_title = f"{utwor['artysta_tytul_alt']} | {utwor['czas_emisji_pelny']}"
         ET.SubElement(item, 'title').text = item_title
         
         item_description_parts = []
         
-        # Obrazek w description: warunkowe zastępowanie
         final_image_url = ''
-        # Sprawdzamy, czy album_cover_url_base wygląda na "default.webp"
         if utwor['album_cover_url_base'] and 'default.webp' in utwor['album_cover_url_base'] and utwor['youtube_id']:
-            # POPRAWKA: Używamy nowego wzoru dla YouTube
             final_image_url = f"https://img.youtube.com/vi/{utwor['youtube_id']}/maxresdefault.jpg"
         elif utwor['album_cover_url_base']:
             final_image_url = f"{utwor['album_cover_url_base']}/1000x1000bb.webp"
-        elif utwor['youtube_id']: # Fallback, jeśli nie ma okładki ani "default.webp"
-            final_image_url = f"https://img.youtube.com/vi/{utwor['youtube_id']}/maxresdefault.jpg" # Standardowa miniatura YouTube
+        elif utwor['youtube_id']:
+            final_image_url = f"https://img.youtube.com/vi/{utwor['youtube_id']}/maxresdefault.jpg"
 
         if final_image_url:
             item_description_parts.append(f'<img src="{final_image_url}"><br><br>')
@@ -148,13 +142,13 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
         item_description_parts.append(f'<a href="{cover_link}">COVER</a>')
 
         if utwor['youtube_id']:
-            youtube_full_link = f'http://youtube.com/watch?v={utwor['youtube_id']}' # Wzór z Twojego poprzedniego zapytania
+            youtube_full_link = f'http://youtube.com/watch?v={utwor['youtube_id']}'
             item_description_parts.append(f' | <a href="{youtube_full_link}">YOUTUBE</a>')
         
         item_description = "".join(item_description_parts)
         ET.SubElement(item, 'description').text = item_description
 
-        # Link do playlisty: myradioonline.pl kończy się na /playlista, ukradiolive.com na /playlist
+        # Link do playlisty dla danej stacji
         ET.SubElement(item, 'link').text = utwor['stacja_playlist_url']
         
         try:
@@ -164,41 +158,43 @@ def wygeneruj_rss(wszystkie_utwory, nazwa_pliku="radio_playlist.xml"):
             print(f"Ostrzeżenie: Nie udało się sparsować daty '{utwor['czas_emisji_pelny']}'. Używam bieżącej daty dla pubDate.")
             ET.SubElement(item, 'pubDate').text = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
 
-
+    nazwa_pliku = f"{stacja_nazwa_do_pliku}.xml"
     tree = ET.ElementTree(root)
     tree.write(nazwa_pliku, encoding='UTF-8', xml_declaration=True)
-    print(f"Plik RSS został wygenerowany jako: {nazwa_pliku}")
+    print(f"Plik RSS został wygenerowany dla {stacja_nazwa_do_pliku.replace('-', ' ').title()} jako: {nazwa_pliku}")
 
 
 if __name__ == "__main__":
     stacje_radiowe = {
-        'BBC Radio 1': 'https://ukradiolive.com/bbc-radio-1',
-        'BBC Radio 2': 'https://ukradiolive.com/bbc-radio-2',
-        'Virgin Radio UK': 'https://ukradiolive.com/virgin-radio-uk',
-        'Heart London': 'https://ukradiolive.com/heart-london',
-        'Radio 357': 'https://myradioonline.pl/radio-357',
-        'ChilliZET': 'https://myradioonline.pl/chillizet',
-        'Radio Nowy Świat': 'https://myradioonline.pl/radio-nowy-swiat',
-        'RMF FM': 'https://myradioonline.pl/rmf-fm/playlista', # Ten URL już ma /playlista
-        'RMF MAXXX': 'https://myradioonline.pl/rmf-maxxx',
-        'Radio ZET': 'https://myradioonline.pl/radio-zet',
-        'PR Czwórka': 'https://myradioonline.pl/polskie-radio-czworka',
-        'PR Trójka': 'https://myradioonline.pl/polskie-radio-trojka',
-        'Radio Eska': 'https://myradioonline.pl/radio-eska'
+        'BBC Radio 1': {'url': 'https://ukradiolive.com/bbc-radio-1', 'plik_nazwa': 'bbc-radio-1'},
+        'BBC Radio 2': {'url': 'https://ukradiolive.com/bbc-radio-2', 'plik_nazwa': 'bbc-radio-2'},
+        'Virgin Radio UK': {'url': 'https://ukradiolive.com/virgin-radio-uk', 'plik_nazwa': 'virgin-radio'},
+        'Heart London': {'url': 'https://ukradiolive.com/heart-london', 'plik_nazwa': 'heart-london'},
+        'Radio 357': {'url': 'https://myradioonline.pl/radio-357', 'plik_nazwa': 'radio-357'},
+        'ChilliZET': {'url': 'https://myradioonline.pl/chillizet', 'plik_nazwa': 'chillizet'},
+        'Radio Nowy Świat': {'url': 'https://myradioonline.pl/radio-nowy-swiat', 'plik_nazwa': 'radio-nowy-swiat'},
+        'RMF FM': {'url': 'https://myradioonline.pl/rmf-fm/playlista', 'plik_nazwa': 'rmf-fm'}, # Ten URL już ma /playlista
+        'RMF MAXXX': {'url': 'https://myradioonline.pl/rmf-maxxx', 'plik_nazwa': 'rmf-maxxx'},
+        'Radio ZET': {'url': 'https://myradioonline.pl/radio-zet', 'plik_nazwa': 'radio-zet'},
+        'PR Czwórka': {'url': 'https://myradioonline.pl/polskie-radio-czworka', 'plik_nazwa': 'polskie-radio-czworka'},
+        'PR Trójka': {'url': 'https://myradioonline.pl/polskie-radio-trojka', 'plik_nazwa': 'trojka'}, # Zmieniono nazwę pliku
+        'Radio Eska': {'url': 'https://myradioonline.pl/radio-eska', 'plik_nazwa': 'radio-eska'}
     }
 
-    wszystkie_parsowane_utwory = []
-
-    for nazwa_stacji, url_stacji in stacje_radiowe.items():
+    for nazwa_stacji, dane_stacji in stacje_radiowe.items():
+        url_stacji = dane_stacji['url']
+        plik_nazwa_bazowa = dane_stacji['plik_nazwa']
+        
         print(f"Pobieram i parsuję playlistę dla: {nazwa_stacji} z {url_stacji}")
         html_content = pobierz_strone(url_stacji)
         if html_content:
             parsowane_utwory = parsuj_playliste(html_content, nazwa_stacji, url_stacji)
-            wszystkie_parsowane_utwory.extend(parsowane_utwory)
+            if parsowane_utwory:
+                # Generujemy RSS dla pojedynczej stacji
+                wygeneruj_rss_dla_stacji(parsowane_utwory, plik_nazwa_bazowa, parsowane_utwory[0]['stacja_playlist_url'])
+            else:
+                print(f"Nie znaleziono utworów dla stacji {nazwa_stacji}. Nie wygenerowano pliku RSS.")
         else:
             print(f"Nie udało się pobrać treści dla {url_stacji}")
 
-    if wszystkie_parsowane_utwory:
-        wygeneruj_rss(wszystkie_parsowane_utwory, nazwa_pliku="radio_playlist.xml") 
-    else:
-        print("Nie pobrano żadnych utworów z żadnej stacji.")
+    print("Zakończono generowanie wszystkich plików RSS.")
